@@ -1,0 +1,20 @@
+# Recipe RAG 依赖清单
+
+# LlamaIndex 核心框架
+llama-index-core
+llama-index-vector-stores-qdrant
+llama-index-embeddings-huggingface
+llama-index-llms-dashscope
+
+# 向量数据库
+qdrant-client
+
+# Embedding 模型运行时
+sentence-transformers
+
+# Web UI
+gradio
+
+# 工具库
+numpy
+python-dotenv
