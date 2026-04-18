@@ -15,6 +15,23 @@ sentence-transformers
 # Web UI
 gradio
 
+# BM25 混合检索
+rank-bm25
+jieba
+
+# Web 后端（FastAPI）
+fastapi
+uvicorn[standard]
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt==4.0.1
+aiosqlite
+python-multipart
+
 # 工具库
 numpy
 python-dotenv
+opencc-python-reimplemented
+pytest
+pytest-asyncio
+httpx

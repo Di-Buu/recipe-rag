@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(.venv/Scripts/pip install:*)"
+      "Bash(.venv/Scripts/pip install:*)",
+      "Bash(wc -l d:/recipe-rag/frontend/src/views/*.vue d:/recipe-rag/frontend/src/components/*.vue)",
+      "Bash(node C:/Users/22901/.claude/skills/impeccable/scripts/cleanup-deprecated.mjs)"
     ]
   }
 }
