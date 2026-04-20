@@ -24,7 +24,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 PROCESSED_DIR = DATA_DIR / "processed"
 
 # 新数据集（豆果美食 CSV）
-CSV_PATH = DATA_DIR / "caipu_1.csv"
+CSV_PATH = DATA_DIR / "caipu.csv"
 CLEAN_DATA_PATH = PROCESSED_DIR / "recipes_clean.json"
 ENRICHED_DATA_PATH = PROCESSED_DIR / "recipes_enriched.json"
 NUTRITION_DB_PATH = PROCESSED_DIR / "food_nutrition.db"

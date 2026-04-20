@@ -14,6 +14,7 @@ build/
 .idea/
 .vscode/
 *.swp
+.venv/
 
 # 论文
 paper/
@@ -37,5 +38,5 @@ Thumbs.db
 
 CLAUDE.md
 .impeccable.md
-.claude/settings.local.json
-.github/copilot-instructions.md
+.claude/
+.github/
