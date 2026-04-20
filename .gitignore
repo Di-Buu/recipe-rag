@@ -15,6 +15,7 @@ build/
 .vscode/
 *.swp
 .venv/
+.recipe/
 
 # 论文
 paper/
@@ -40,3 +41,8 @@ CLAUDE.md
 .impeccable.md
 .claude/
 .github/
+.claude/settings.local.json
+.github/copilot-instructions.md
+data/processed/bm25_index.json
+data/processed/parent_docstore.json
+data/processed/qdrant_db/collection/recipe_children/storage.sqlite

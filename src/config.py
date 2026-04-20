@@ -90,8 +90,8 @@ LLM_MAX_TOKENS = 2048   # 允许完整食谱输出
 # Embedding 参数
 # =============================================================================
 
-EMBEDDING_MAX_LENGTH = 8192  # Qwen3-Embedding 支持 32768，从默认 512 提升
-EMBEDDING_BATCH_SIZE = 64    # CPU 批量 embedding 大小
+EMBEDDING_MAX_LENGTH = 1024  # Qwen3-Embedding 支持 32768，从默认 512 提升
+EMBEDDING_BATCH_SIZE = 256    # CPU 批量 embedding 大小
 
 # =============================================================================
 # 营养标签配置
