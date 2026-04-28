@@ -17,8 +17,8 @@
         → 父文档聚合去重 → top-K 食谱
 """
 
-import json
 import logging
+import pickle
 from pathlib import Path
 from typing import Optional
 
@@ -52,12 +52,14 @@ class RecipeRetriever:
 
     def build_bm25_index(self, force_rebuild: bool = False):
         """
-        构建 BM25 索引。
+        构建 BM25 索引（父文档粒度）。
 
-        从 indexer.parent_store 中提取所有子块文本，
-        用 jieba 分词后构建 BM25 索引。
+        设计说明：
+        - Dense 走子块粒度（info/ingredient/step 各自的 embedding），提高语义精度
+        - BM25 走父文档粒度（每个食谱一份完整文本），符合稀疏检索的全文匹配语义
+        - RRF 融合时两路 node_id 粒度不同，但 aggregate_parents 按 recipe_id 聚合后对齐
 
-        支持序列化到 BM25_INDEX_PATH 磁盘缓存。
+        支持 pickle 磁盘缓存，加载时直接复用 BM25Okapi 对象。
 
         参数:
             force_rebuild: 是否强制重建（忽略缓存）
@@ -69,8 +71,8 @@ class RecipeRetriever:
             if self._load_bm25_cache(cache_path):
                 return
 
-        # 从 parent_store 提取所有子块文本并分词
-        logger.info("正在构建 BM25 索引...")
+        # 父文档粒度：每个 recipe 对应 BM25 语料中的一个文档
+        logger.info("正在构建 BM25 索引（父文档粒度）...")
         corpus: list[list[str]] = []
         id_map: list[str] = []
 
@@ -78,17 +80,12 @@ class RecipeRetriever:
             text = entry.get("text", "")
             if not text:
                 continue
-            # 每个父文档作为一个整体文档进入 BM25
-            # 但我们需要按子块粒度来做，以便后续与 dense 检索对齐
-            # 根据 indexer 设计，每个食谱有 3 个子块：info / ingredient / step
-            for chunk_type in ["info", "ingredient", "step"]:
-                chunk_id = f"{recipe_id}_{chunk_type}"
-                # 从父文档文本中提取对应片段（简化处理：使用完整父文档文本）
-                # 实际上子块文本无法从父文档精确还原，使用父文档文本作为 BM25 语料
-                tokens = jieba.lcut(text)
-                if tokens:
-                    corpus.append(tokens)
-                    id_map.append(chunk_id)
+            tokens = jieba.lcut(text)
+            if not tokens:
+                continue
+            corpus.append(tokens)
+            # 用 _bm25 后缀标记 node_id，与 Dense 子块的 _info/_ingredient/_step 区分
+            id_map.append(f"{recipe_id}_bm25")
 
         if not corpus:
             logger.warning("BM25 语料为空，跳过索引构建")
@@ -98,45 +95,47 @@ class RecipeRetriever:
         self._bm25_id_map = id_map
         self._bm25 = BM25Okapi(corpus)
 
-        logger.info(f"BM25 索引构建完成：{len(corpus)} 个文档")
+        logger.info(f"BM25 索引构建完成：{len(corpus)} 个父文档")
 
-        # 保存缓存
+        # 保存缓存（pickle 整个 BM25Okapi 对象，避免下次加载时重新计算 IDF）
         self._save_bm25_cache(cache_path)
 
     def _save_bm25_cache(self, path: Path):
-        """将 BM25 语料和 id 映射序列化为 JSON。"""
+        """pickle 整个 BM25Okapi 对象 + id_map，加载时一次反序列化到位。"""
         path.parent.mkdir(parents=True, exist_ok=True)
         cache_data = {
+            "bm25": self._bm25,
             "corpus": self._bm25_corpus,
             "id_map": self._bm25_id_map,
         }
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(cache_data, f, ensure_ascii=False)
+        with open(path, "wb") as f:
+            pickle.dump(cache_data, f, protocol=pickle.HIGHEST_PROTOCOL)
         logger.info(f"BM25 缓存已保存: {path}")
 
     def _load_bm25_cache(self, path: Path) -> bool:
         """
-        从 JSON 缓存加载 BM25 索引。
+        从 pickle 缓存加载 BM25 索引（直接复用 BM25Okapi 对象，秒级）。
 
         返回:
             是否加载成功
         """
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                cache_data = json.load(f)
+            with open(path, "rb") as f:
+                cache_data = pickle.load(f)
 
-            corpus = cache_data["corpus"]
-            id_map = cache_data["id_map"]
+            bm25 = cache_data.get("bm25")
+            corpus = cache_data.get("corpus") or []
+            id_map = cache_data.get("id_map") or []
 
-            if not corpus:
-                logger.warning("BM25 缓存为空")
+            if bm25 is None or not corpus:
+                logger.warning("BM25 缓存内容为空")
                 return False
 
+            self._bm25 = bm25
             self._bm25_corpus = corpus
             self._bm25_id_map = id_map
-            self._bm25 = BM25Okapi(corpus)
 
-            logger.info(f"BM25 缓存已加载: {path}（{len(corpus)} 个文档）")
+            logger.info(f"BM25 缓存已加载: {path}（{len(corpus)} 个父文档）")
             return True
         except Exception as e:
             logger.warning(f"BM25 缓存加载失败: {e}")
@@ -246,7 +245,7 @@ class RecipeRetriever:
             with_payload=True,
         )
 
-        # 转为统一格式（使用 chunk_id 作为 node_id，与 BM25 对齐以便 RRF 融合）
+        # 转为统一格式（使用 chunk_id 作为 node_id）
         results = []
         for point in search_results.points:
             payload = point.payload or {}
@@ -255,6 +254,7 @@ class RecipeRetriever:
                 "score": point.score,
                 "metadata": payload,
                 "recipe_id": payload.get("recipe_id", ""),
+                "source": "dense",
             })
 
         logger.debug(f"Dense 检索返回 {len(results)} 个子块")
@@ -307,18 +307,18 @@ class RecipeRetriever:
             if score <= 0:
                 continue
             node_id = self._bm25_id_map[idx]
-            # 从 node_id 解析 recipe_id（格式 "{recipe_id}_{chunk_type}"）
+            # BM25 现在是父文档粒度，node_id 形如 "{recipe_id}_bm25"
             recipe_id = _parse_recipe_id(node_id)
-            # 从 parent_store 获取元数据
             parent_meta = self._indexer.get_parent_metadata(recipe_id) or {}
             results.append({
                 "node_id": node_id,
                 "score": score,
                 "metadata": parent_meta,
                 "recipe_id": recipe_id,
+                "source": "bm25",
             })
 
-        logger.debug(f"BM25 检索返回 {len(results)} 个子块")
+        logger.debug(f"BM25 检索返回 {len(results)} 个父文档")
         return results
 
 
@@ -329,16 +329,18 @@ class RecipeRetriever:
 
 def _parse_recipe_id(node_id: str) -> str:
     """
-    从子块 node_id 中解析 recipe_id。
+    从 node_id 中解析 recipe_id。
 
-    node_id 格式为 "{recipe_id}_{chunk_type}"，
-    chunk_type 为 info / ingredient / step。
+    node_id 可能的格式：
+    - Dense 子块:  "{recipe_id}_{info|ingredient|step}"
+    - BM25 父文档: "{recipe_id}_bm25"
 
     示例:
         "12345_info" → "12345"
+        "12345_bm25" → "12345"
         "abc_def_step" → "abc_def"
     """
-    for suffix in ("_info", "_ingredient", "_step"):
+    for suffix in ("_info", "_ingredient", "_step", "_bm25"):
         if node_id.endswith(suffix):
             return node_id[: -len(suffix)]
     # 回退：取最后一个下划线前的部分
@@ -665,9 +667,11 @@ def aggregate_parents(
         groups.setdefault(rid, []).append(chunk)
 
     # 2. 计算归一化后的基础相关性
+    # match_count 语义：Dense 子块的命中数（info/ingredient/step 中命中几个）
+    # BM25 是父文档粒度，只贡献一个条目，不计入 match_count，避免 ratio 虚高
     scored = []
     for rid, chunks in groups.items():
-        match_count = len(chunks)
+        match_count = sum(1 for c in chunks if c.get("source") == "dense")
         norm_scores = [c["score_norm"] for c in chunks]
         base_relevance = (
             (match_count / 3) * config.DEDUP_WEIGHT_MATCH_RATIO
@@ -724,6 +728,23 @@ def aggregate_parents(
 
     # 加分后重排，取 top_k
     results.sort(key=lambda x: -x["relevance"])
+
+    # === 精确同名短路：保证标题与查询完全一致的食谱无条件置顶 ===
+    # 动机：当用户输入确切菜名（如"清蒸鲈鱼"）时，期望前几条全部是精确同名。
+    # 在原评分逻辑下，做法长/子块命中多的"子串匹配"食谱有时会压过
+    # 做法短/子块命中少的精确同名食谱。短路逻辑修正该业务语义优先级。
+    if query:
+        q_clean = query.strip()
+        exact_idx = {
+            i for i, r in enumerate(results)
+            if (r.get("metadata") or {}).get("title", "").strip() == q_clean
+        }
+        if exact_idx:
+            exact = [results[i] for i in sorted(exact_idx)]
+            others = [r for i, r in enumerate(results) if i not in exact_idx]
+            exact.sort(key=lambda x: -x["relevance"])
+            results = exact + others
+
     return results[:top_k]
 
 

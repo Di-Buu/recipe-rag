@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from src.api.database import init_db
-from src.api.routers import auth, recommend, recipe, preference, history
+from src.api.routers import auth, recommend, recipe, preference, history, eval as eval_router
 from src.config import ENRICHED_DATA_PATH
 
 logger = logging.getLogger(__name__)
@@ -90,6 +90,7 @@ app.include_router(recommend.router)
 app.include_router(recipe.router)
 app.include_router(preference.router)
 app.include_router(history.router)
+app.include_router(eval_router.router)
 
 
 @app.get("/api/health", tags=["系统"])
