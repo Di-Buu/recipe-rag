@@ -265,6 +265,7 @@ class RecipeIndexer:
         if self._embedding_model is None:
             logger.info(f"正在加载 Embedding 模型: {config.EMBEDDING_MODEL}")
             self._embedding_model = HuggingFaceEmbedding(
+                device="cuda",
                 model_name=config.EMBEDDING_MODEL,
                 max_length=config.EMBEDDING_MAX_LENGTH,
             )
