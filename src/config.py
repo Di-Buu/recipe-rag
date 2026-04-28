@@ -33,8 +33,8 @@ INDEX_DIR = PROCESSED_DIR
 
 # 父文档持久化存储路径
 DOCSTORE_PATH = str(PROCESSED_DIR / "parent_docstore.json")
-# BM25 索引持久化路径
-BM25_INDEX_PATH = str(PROCESSED_DIR / "bm25_index.json")
+# BM25 索引持久化路径(pickle 格式,存整个 BM25Okapi 对象 + id_map)
+BM25_INDEX_PATH = str(PROCESSED_DIR / "bm25_index.pkl")
 
 # =============================================================================
 # Qdrant 向量数据库配置
@@ -42,6 +42,11 @@ BM25_INDEX_PATH = str(PROCESSED_DIR / "bm25_index.json")
 
 QDRANT_PATH = str(INDEX_DIR / "qdrant_db")
 QDRANT_COLLECTION_NAME = "recipe_children"  # 存储子块向量
+
+# Qdrant 连接模式: "local"(嵌入式文件,不适合大集合) 或 "server"(Docker/远程服务)
+# 大于 2 万条 points 建议切 server 模式
+QDRANT_MODE = os.getenv("QDRANT_MODE", "local")
+QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 
 # =============================================================================
 # Embedding 模型配置
@@ -58,11 +63,23 @@ DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
 DASHSCOPE_MODEL = "qwen3-max"
 
 # =============================================================================
+# 评估 Judge LLM 配置
+# 为规避 LLM-as-a-Judge 的 self-preference bias(Zheng et al., 2023),
+# judge 选用与生成模型跨厂商、跨架构的 DeepSeek,通过 DashScope 托管调用
+# =============================================================================
+
+JUDGE_MODEL = "deepseek-v3.2-exp"
+JUDGE_TEMPERATURE = 0.0    # judge 用 0 温度,保证评分一致可复现
+# Faithfulness 对每道菜提取十多条 statement,附加 reason 后 JSON 可达 3000+ tokens
+# 1024 会被截断导致 OUTPUT_PARSING_FAILURE,8192 给充足余量
+JUDGE_MAX_TOKENS = 8192
+
+# =============================================================================
 # 检索参数
 # =============================================================================
 
 TOP_K = 5              # 最终返回的食谱数量
-RETRIEVAL_TOP_K = 30   # 子块过量检索数（用于去重聚合前的候选池）
+RETRIEVAL_TOP_K = 100  # 子块过量检索数（用于去重聚合前的候选池）
 
 # 混合检索权重（Dense vs BM25）
 DENSE_WEIGHT = 0.6     # 向量语义检索权重

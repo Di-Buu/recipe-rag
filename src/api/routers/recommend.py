@@ -155,9 +155,24 @@ async def recommend_stream(
         full_answer = ""
         sources_data = []
 
+        # pipeline.query_stream 是同步 generator,内部 dashscope SDK 阻塞;
+        # 直接 for 会锁死 event loop 导致 SSE 实质变为一次性返回。
+        # 解法:把每次 next() 扔到 threadpool,主 loop 立即 yield SSE chunk。
+        _SENTINEL = object()
+
+        def _next_chunk(it):
+            try:
+                return next(it)
+            except StopIteration:
+                return _SENTINEL
+
         try:
             gen = pipeline.query_stream(req.question, filters_dict)
-            for chunk in gen:
+            while True:
+                chunk = await asyncio.to_thread(_next_chunk, gen)
+                if chunk is _SENTINEL:
+                    break
+
                 if chunk["type"] == "sources":
                     raw_sources = chunk.get("sources", [])
                     mapped = [_build_source(s) for s in raw_sources]

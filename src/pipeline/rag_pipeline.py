@@ -150,6 +150,7 @@ class RAGPipeline:
             {
                 "answer": str,         # LLM 生成的回答
                 "sources": list[dict], # 检索来源列表
+                "contexts": list[str], # 父文档文本列表(与 sources 同序,供评估用)
                 "query": str,          # 原始查询
                 "filters": dict|None,  # 使用的过滤条件
             }
@@ -170,6 +171,7 @@ class RAGPipeline:
                 "answer": "抱歉，未找到与您需求相关的食谱。"
                           "请尝试调整搜索关键词或放宽筛选条件。",
                 "sources": [],
+                "contexts": [],
                 "query": question,
                 "filters": filters,
             }
@@ -205,9 +207,12 @@ class RAGPipeline:
                 "metadata": doc.get("metadata", {}),
             })
 
+        contexts = [doc.get("text", "") for doc in parent_docs]
+
         return {
             "answer": answer,
             "sources": sources,
+            "contexts": contexts,
             "query": question,
             "filters": filters,
         }
